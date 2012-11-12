@@ -1,5 +1,4 @@
-/**
-*
+/*
 * Controlling the WebApp
 * ~~ Here be Dragons ~~
 *
@@ -63,28 +62,74 @@ var App = function ($scope, $http) {
 
     // Generic call back to set error for all requests
     var errorCallback = function (data, status, headers, config) {
-       Busy.stop();
-       $scope.error = true;
-       switch (status) {
-          case 401:
-             setError('Incorrect <strong>username</strong> or <strong>password</strong> entered');
-          break;
-          case 403:
-             setError('The Openshift server is refusing to respond');
-          break;
-          case 422:
-               setError('The request made to the OpenShift Server is semantically incorrect');
-          break;
-          case 500:
-             setError('The server is broken! Retry in a while');
-          break;
-          default:
-             setError('Error in contacting server!');
-          break;
-       }
+        Busy.stop();
+        if ($scope.deleteRequestCount > 0) {
+            return;
+        }
+        $scope.error = true;
+        switch (status) {
+            case 401:
+                setError('Incorrect <strong>username</strong> or <strong>password</strong> entered');
+            break;
+            case 403:
+                setError('The Openshift server is refusing to respond');
+            break;
+            case 404:
+                var str = 'Page not found on server';
+                if (data.error) {
+                    str = JSON.parse(data.error).messages[0].text
+                }
+                setError(str);
+            break;
+            case 422:
+                setError(JSON.parse(data.error).messages[0].text);
+            break;
+            case 500:
+                var str = 'The server is broken! Retry in a while';
+                if (data.error) {
+                    str = JSON.parse(data.error).messages[0].text
+                }
+                setError(str);
+            break;
+            default:
+                var str = 'Error in contacting server!';
+                if (data.error) {
+                    str = JSON.parse(data.error).messages[0].text
+                }
+                setError(str);
+            break;
+        }
     };
 
-    // Functions dealing with the connection parameters
+    // Call back to set error for deployment requests
+    $scope.deleteRequestCount = 0;
+    var errorCallbackForDeploy = function (data, status, headers, config) {
+        errorCallback(data, status, headers, config);
+        // Delete all applications that were made
+        if($scope.deleteRequestCount != 0) {
+            return false;
+        }
+        Busy.start();
+        for (var i = 0; i<$scope.graph.vertices.length; i++) {
+            proxify({ // Check if application is defined
+                uri: $scope.host + '/broker/rest/domains/' + $scope.namespace + '/applications/' + $scope.appName + i,
+                headers: {
+                    accept: 'application/json; version=1.2',
+                    Authorization: $scope.authString
+                },
+                method: 'DELETE'
+            }, function (data, status, headers, config) {
+                console.log(data.data);
+            }, function (data, status, headers, config) {
+                console.log(data.data);
+            });
+            $scope.deleteRequestCount++;
+        }
+        Busy.stop();
+        $scope.startDeploy = false;
+    };
+
+    /// Functions dealing with the connection parameters
     $scope.submit = function () { // Authenticate user and get the list of cartridges and templates
         Busy.start();
         $scope.cleargraph();
@@ -94,75 +139,94 @@ var App = function ($scope, $http) {
         $('#connection').css('color', '#d00');
         $scope.cartridges = [];
         $scope.templates=[];
+
         proxify({ // Authenticate user
-            uri: $scope.host + '/broker/rest/user',
+           uri: $scope.host + '/broker/rest/user',
             headers: {
-                accept: 'application/json',
+                accept: 'application/json; version=1.2',
                 Authorization: 'Basic ' + window.btoa($scope.username + ':' + $scope.password)
             },
             method: 'GET'
         }, function (data, status, headers, config) {
             $scope.authString = 'Basic ' + window.btoa($scope.username + ':' + $scope.password);
-            proxify({ // Get list of cartridges
-                uri: $scope.host + '/broker/rest/cartridges',
+            proxify({ // Check if application is defined
+                uri: $scope.host + '/broker/rest/domains/' + $scope.namespace + '/applications',
                 headers: {
-                    accept: 'application/json'
+                    accept: 'application/json; version=1.2',
+                    Authorization: $scope.authString
                 },
                 method: 'GET'
             }, function (data, status, headers, cfg1) {
-                $http({ // Read configuration file for dependencies
-                    url: '/config/rules.json',
-                    method: 'GET'
-                }).success(function (config, st, h, cfg2) {
-                    $scope.rules = config;
-                }).error(function (config, st, h, cfg2) {
-                    setError('Could not get cartridge dependency rules.');
-                });
-                $http({ // Read configuration file for images
-                    url: '/config/images.json',
-                    method: 'GET'
-                }).success(function (config, st, h, cfg2) {
-                    data.data.forEach(function (ele, i, arr) {
-                        ele.img = config[ele.display_name];
-                        if (ele.img === undefined) {
-                            ele.img = config['default'];
-                        }
-                    });
-                }).error(function (config, st, h, cfg2) {
-                    setError('Could not get cartridge image configuration');
-                });
-                $scope.cartridges = data.data;
-                proxify({ // Get list of template
-                    uri: $scope.host + '/broker/rest/application_template',
-                    headers: {
-                        accept: 'application/json'
-                    },
-                    method: 'GET'
-                }, function (data, status, headers, cfg3) {
-                    $http({
-                        url: '/config/template.json',
+                var nameChecker = new RegExp('^'+$scope.appName.toLowerCase()+'[\\d]+$');
+                var flag = false;
+                for (var i in data.data) {
+                    if (data.data[i].name.match(nameChecker) && data.data[i].name.match(nameChecker).length>0) {
+                        setError('Application with this prefix already exists.');
+                        flag = true;
+                        break;
+                    }
+                }
+                if (!flag) {
+                    proxify({ // Get list of cartridges
+                        uri: $scope.host + '/broker/rest/cartridges',
+                        headers: {
+                            accept: 'application/json; version=1.2'
+                        },
                         method: 'GET'
-                    }).success(function (config, st, h, cfg32) {
+                    }, function (data, status, headers, cfg1) {
+                        $http({ // Read configuration file for dependencies
+                            url: '/config/rules.json',
+                            method: 'GET'
+                        }).success(function (config, st, h, cfg2) {
+                            $scope.rules = config;
+                        }).error(function (config, st, h, cfg2) {
+                            setError('Could not get cartridge dependency rules.');
+                        });
+                        $http({ // Read configuration file for images
+                            url: '/config/images.json',
+                            method: 'GET'
+                        }).success(function (config, st, h, cfg2) {
                             data.data.forEach(function (ele, i, arr) {
-                                ele.type = 'template';
                                 ele.img = config[ele.display_name];
                                 if (ele.img === undefined) {
                                     ele.img = config['default'];
                                 }
                             });
-                    }).error(function (config, st, h, cfg32) {
-                            setError('Could not get application template configuration');
-                    });
-                    $scope.templates = data.data;
-                    console.log($scope.cartridges);
-                    console.log($scope.templates);
-                    $('#connection').css('color', '#0d0');
-                    Busy.stop();
-                    $scope.connected = true;
-                }, errorCallback);
-            }, errorCallback);
+                        }).error(function (config, st, h, cfg2) {
+                            setError('Could not get cartridge image configuration');
+                        });
+                        $scope.cartridges = data.data;
+                        proxify({ // Get list of templates
+                            uri: $scope.host + '/broker/rest/application_template',
+                            headers: {
+                                accept: 'application/json; version=1.2'
+                            },
+                            method: 'GET'
+                        }, function (data, status, headers, cfg3) {
+                            $http({ // Read configuration file for template images
+                                url: '/config/template.json',
+                                method: 'GET'
+                            }).success(function (config, st, h, cfg3) {
+                                data.data.forEach(function (ele, i, arr) {
+                                    ele.type = 'template';
+                                    ele.img = config[ele.display_name];
+                                    if (ele.img === undefined) {
+                                        ele.img = config['default'];
+                                    }
+                                });
+                            }).error(function (config, st, h, cfg3) {
+                                setError('Could not get application template configuration');
+                            });
+                            $scope.templates = data.data;
+                            $('#connection').css('color', '#0d0');
+                            $scope.connected = true;
+                            Busy.stop();
+                        }, errorCallback);
+                    }, errorCallback);
+                }
+            }, errorCallback)
         }, errorCallback);
-    };
+    }
 
     // Variables and functions used in the Graph
     $scope.ctr = 0;
@@ -195,85 +259,130 @@ var App = function ($scope, $http) {
         return {src: list, item: item};
     };
 
-    $scope.acceptTokenInSubnode = function (targetArray, token) {       // Check if drag target is acceptable
-          if (token) {
-              var cartridge = token.item;
-              if(targetArray.length === 0) {
-                 if (cartridge.type === 'standalone') {
+    $scope.acceptTokenInSubnode = function (targetArray, token) { // Check if drag target is acceptable
+        if (token) {
+            var cartridge = token.item;
+            var siren = false;
+            var conflicts=[];
+            if(targetArray.length === 0) {
+                if (cartridge.type === 'standalone') {
                     return true;
-                 } else if (cartridge.type === 'template') {
-                     return true;
-                 } else {
+                } else if (cartridge.type === 'template') {
+                    return true;
+                } else {
                     setError('First cartridge must be a standalone or template.');
-                 }
-              } else {
-                 if (cartridge.type === 'template') {
-                     setError('Can install template in empty application only');
-                     return false;
-                 }
-                 if (cartridge.type != 'standalone') {
-                    if ($.inArray(cartridge, targetArray) < 0) {
-                       var thisIsDB = false;
-                       var dbAlreadyAdded = false;
-                       for (var i in cartridge.tags) {
-                          if (cartridge.tags[i] === 'database') {
-                             thisIsDB = true;
-                             break;
-                          }
-                       }
-                       var flag = false;
-                       for (var i in targetArray) {
-                          for (var j in targetArray[i].tags) {
-                             if (targetArray[i].tags[j] === 'database') {
-                                dbAlreadyAdded = flag = true;
-                                break;
-                             }
-                          }
-                          if (flag) {
-                             break;
-                          }
-                       }
-                       if (!(thisIsDB && dbAlreadyAdded)) {
-                          // Checking if there is a rule for this cartridge
-                          flag = false;
-                          for (var i in Object.keys($scope.rules)) {
-                             if (cartridge.name === Object.keys($scope.rules)[i]) {
-                                flag = true;
-                                break;
-                             }
-                          }
-                          if (!flag) {
-                             return true;
-                          }
-                          // Checking if rules for this cartridge were satsfied
-                          flag = false;
-                          for (var i in Object.keys($scope.rules)) {
-                             if (cartridge.name === Object.keys($scope.rules)[i]) {
-                                for (var j in targetArray) {
-                                   if ($.inArray(targetArray[j].name, $scope.rules[Object.keys($scope.rules)[i]]) >= 0) {
-                                      flag = true;
-                                      break
-                                   }
+                }
+            } else {
+                if (cartridge.type === 'template') {
+                    setError('Can install template in empty application only');
+                    return false;
+                }
+                if (cartridge.type != 'standalone') {
+                    for (var i in targetArray) {
+                        if(targetArray[i].type === 'template') { // checking if added cartridge was a template
+                            for (var j in Object.keys($scope.rules.template)) { // storing in conflicts which are pre-installed in template that conflict
+                                if (targetArray[i].tags[1] === Object.keys($scope.rules.template)[j]) {
+                                    for (var k in $scope.rules.template[Object.keys($scope.rules.template)[j]]) {
+                                        conflicts[k]=$scope.rules.template[Object.keys($scope.rules.template)[j]][k];
+                                    }
+                                    siren = true; // siren if true shows that its template
+                                    break;
                                 }
-                                if (flag) {
-                                   return true;
-                                } else {
-                                   setError('Install ' + $scope.rules[Object.keys($scope.rules)[i]] + ' first.');
-                                }
-                             }
-                         }
-                       } else {
-                          setError('Only one database cartridge is allowed.');
-                       }
-                    } else {
-                       setError('Duplicate cartridges cannot be added.');
+                            }
+                        }
+                        if(siren === true) {
+                            break;
+                        }
                     }
-                 } else {
+                    if ($.inArray(cartridge, targetArray) < 0) {
+                        var thisIsDB = false;
+                        var dbAlreadyAdded = false;
+                        for (var i in $scope.cartridges) { // checking if already a database was installed along with template
+                            for (var j in conflicts ) {
+                                if(conflicts[j] === $scope.cartridges[i].name) {
+                                    if($.inArray('database',$scope.cartridges[i].tags)>=0) {
+                                        dbAlreadyAdded = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if(dbAlreadyAdded) {
+                                break;
+                            }
+                        }
+                        for (var i in cartridge.tags) {
+                            if (cartridge.tags[i] === 'database') {
+                                thisIsDB = true;
+                                break;
+                            }
+                        }
+                       var flag = false;
+                        for (var i in targetArray) {
+                            for (var j in targetArray[i].tags) {
+                                if (targetArray[i].tags[j] === 'database') {
+                                    dbAlreadyAdded = flag = true;
+                                    break;
+                                }
+                            }
+                            if (flag) {
+                                break;
+                            }
+                        }
+                        if (!(thisIsDB && dbAlreadyAdded)) {
+                            // Checking if there is a rule for this cartridge
+                            flag = false;
+                            var check;
+                            for (var i in Object.keys($scope.rules.cartridge)) {
+                                if (cartridge.name === Object.keys($scope.rules.cartridge)[i]) {
+                                    flag = true;
+                                    check=i;
+                                    break;
+                                }
+                            }
+                            if (!flag) {
+                                return true;
+                            }
+                            // Checking if rules for this cartridge were satsfied
+                            flag = false;
+                            var match=false;
+                            for (var i in Object.keys($scope.rules.cartridge)) {
+                                if (cartridge.name === Object.keys($scope.rules.cartridge)[i]) {
+                                    for (var j in targetArray) {
+                                        if ($.inArray(targetArray[j].name, $scope.rules.cartridge[Object.keys($scope.rules.cartridge)[i]]) >= 0) {
+                                            flag = true;
+                                            break;
+                                        }
+                                    }
+                                    if (flag && !siren) { // checking if dependency was already installed
+                                        return true;
+                                    } else {
+                                        if (siren) {
+                                            for (var k in conflicts) {
+                                                if ($.inArray(conflicts[k],$scope.rules.cartridge[Object.keys($scope.rules.cartridge)[check]]) >= 0) {
+                                                    match = true;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        if (match ) {
+                                            return true;
+                                        }
+                                        setError('Install ' + $scope.rules.cartridge[Object.keys($scope.rules.cartridge)[i]] + ' first.');
+                                    }
+                                }
+                            }
+                        } else {
+                            setError('Only one database cartridge is allowed.');
+                        }
+                    } else {
+                        setError('Duplicate cartridges cannot be added.');
+                    }
+                } else {
                     setError('Cannot add this to application. Standalone cartridge or template already added.');
-                 }
-              }
-       }
-       return false;
+                }
+            }
+        }
+        return false;
     };
 
     $scope.commitTokenInSubnode = function (to, token) { // Add cartridge to vertex
@@ -282,6 +391,10 @@ var App = function ($scope, $http) {
     };
 
     $scope.deleteCartridge = function (cartridge, vertex) { // Delete cartridge from vertex
+        if (cartridge.type === 'standalone' || cartridge.type === 'template') {
+           vertex.cartridges = [];
+           return;
+        }
         var i = -1;
         for (i in vertex.cartridges) {
             if(vertex.cartridges[i] === cartridge) {
@@ -289,7 +402,20 @@ var App = function ($scope, $http) {
             }
         }
         if (i>=0) {
-            vertex.cartridges.splice(i);
+            var deleted = vertex.cartridges.splice(i, 1)[0];
+            var keys = Object.keys($scope.rules.cartridge);
+            for (var j in keys) {
+               var pos = $.inArray(deleted.name, $scope.rules.cartridge[keys[j]]);
+               console.log(pos);
+               if (pos>=0) {
+               console.log(keys[j]);
+                  for (var k in vertex.cartridges) {
+                     if (vertex.cartridges[k].name === keys[j]) {
+                        vertex.cartridges.splice(k, 1);
+                     }
+                  }
+               }
+            }
         }
         repaint = true;
     };
@@ -301,8 +427,22 @@ var App = function ($scope, $http) {
         repaint = false;
     }, 100);
 
+    // Variables and functions relating to deployment
+    $scope.startDeploy = false;
     $scope.deploy = function () { // Deploy the graph to a openshift broker
+        $scope.deleteRequestCount = 0;
         Busy.start();
+        $scope.startDeploy = true;
+        for (var i in $scope.graph.vertices) {
+            $scope.graph.vertices[i].deployed = false;
+        }
+        for (var i in $scope.graph.vertices) {
+            if ($scope.graph.vertices[i].cartridges && $scope.graph.vertices[i].cartridges.length === 0) {
+                setError('First add cartridges to all nodes');
+                Busy.stop();
+                return;
+            }
+        }
         $scope.graph.vertices.forEach(function (ele, i, arr) {
             var formData = {};
             if (ele.cartridges[0].type === 'standalone') {
@@ -323,24 +463,29 @@ var App = function ($scope, $http) {
             proxify({
                 uri: $scope.host + '/broker/rest/domains/' + $scope.namespace + '/applications',
                 headers: {
-                    accept: 'application/json',
+                    accept: 'application/json; version=1.2',
                     Authorization: 'Basic ' + window.btoa($scope.username + ':' + $scope.password)
                 },
                 method: 'POST',
                 form: formData
             }, function (data, status, headers, config) {
+                $('.deploy_'+ i.toString() + '_0').css('color', '#0d0');
                 if (ele.cartridges.length === 1) {
-                   Busy.stop();
+                    Busy.stop();
                 }
                 data = JSON.parse(data.error);
                 ele.properties.app.git = data.data.git_url;
                 ele.properties.app.app = data.data.app_url;
                 ele.properties.app.ssh = data.data.ssh_url;
-                for (var j=1; j<ele.cartridges.length; j++) {
+                // Recursively create cartridges
+                var recursiveProxify = function (j) {
+                    if(j >= ele.cartridges.length) {
+                        return;
+                    }
                     proxify({
                         uri: $scope.host + '/broker/rest/domains/' + $scope.namespace + '/applications/' + $scope.appName + i.toString() + '/cartridges',
                         headers: {
-                            accept: 'application/json',
+                            accept: 'application/json; version=1.2',
                             Authorization: 'Basic ' + window.btoa($scope.username + ':' + $scope.password)
                         },
                         method: 'POST',
@@ -348,6 +493,7 @@ var App = function ($scope, $http) {
                             cartridge: ele.cartridges[j].name
                         }
                     }, function (data, status, headers, config) {
+                        $('.deploy_'+ i.toString() + '_' + j.toString()).css('color', '#0d0')
                         if (j==ele.cartridges.length-1) {
                             Busy.stop();
                         }
@@ -362,11 +508,16 @@ var App = function ($scope, $http) {
                             cartData[props[k].name] = props[k].value;
                         }
                         ele.properties.cartridge.push(cartData);
-                    }, errorCallback);
-                }
+                        recursiveProxify(j+1);
+                    }, errorCallbackForDeploy);
+                };
+                recursiveProxify(1);
                 ele.deployed = true;
-                Busy.stop()
-            }, errorCallback);
+                if (i === $scope.graph.vertices.length) {
+                    Busy.stop();
+                    $scope.startDeploy = false;
+                }
+            }, errorCallbackForDeploy);
         });
     };
 };
