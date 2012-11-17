@@ -66,10 +66,7 @@ $(function () {
                $("[rel=popover]").popover('hide')
                isVisible = clickedAway = false
            }
-           else
-           {
-                    clickedAway = true
-           }
+           else{clickedAway = true}
         });
 
         // Make all nodes draggable
