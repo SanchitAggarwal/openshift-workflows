@@ -2,7 +2,9 @@
 A client for the [OpenShift](http://www.github.com/openshift) which provides an interface
 to the Broker-API for simple deployments as well as more complicated workflows.
 
-![Screenshot](https://raw.github.com/subszero/openshift-workflows/master/public/img/screenshot.png)
+![Screenshot](https://raw.github.com/subszero/openshift-workflows/poster/images/screenshot_1.png)
+
+![Screenshot](https://raw.github.com/subszero/openshift-workflows/poster/images/screenshot_2.png)
 
 
 ## Installation
@@ -29,7 +31,7 @@ $ node app.js -b
 ```
 
 ## Configuration files
-This application was built to be used with the FreeShift or MegaShift service provided on the [Red Hat Cloud](https://openshift.redhat.com/). However, it can be used with any deployment of the [Openshift Origin](https://github.com/openshift). If however, you have tweaked this to include non-standard cartridges and templates, it may be required to make changes in the following configuration files -
+This application was built to be used with the FreeShift or MegaShift service provided on the [Red Hat Cloud](https://openshift.redhat.com/). However, it can be used with any deployment of the [Openshift Origin](https://github.com/openshift). If however, your deployment of Openshift is tweaked to include non-standard cartridges and templates, you will be required to make changes in the following configuration files -
 
 * public/conf/images.json - This file controls the images that are used to display cartridges on the screen.
 
@@ -46,7 +48,7 @@ This application was built to be used with the FreeShift or MegaShift service pr
     "PHP 5.3": "/img/icons/php.png"
 }
 ```
-The file stores a hash with the name of the cartridge as key and the location of the corresponding image as value.
+The file stores a hash with the name of the cartridge as key and the location of the corresponding image as value. The images that are shipped with the code are placed in the `/public/img/icons` folder. However, you may give a link to a generic image on the internet.
 
 * public/conf/templates.json - This file controls the images that are used to display templates on the screen.
 
@@ -58,7 +60,7 @@ The file stores a hash with the name of the cartridge as key and the location of
     "Django (Test)": "/img/icons/django_Test.png"
 }
 ```
-The file stores a hash with the name of the template as key and the location of the corresponding image as value.
+The file stores a hash with the name of the template as key and the location of the corresponding image as value. The images that are shipped with the code are placed in the `/public/img/icons` folder. However, you may give a link to a generic image on the internet.
 
 * public/conf/rules.json - This file defines dependencies between cartridges and templates, so that a semantically correct workflow can be defined.
 
@@ -78,7 +80,7 @@ The file stores a hash with the name of the template as key and the location of 
 }
 ```
 
-The configuration file has two parts, the cartridge hash, which stores the dependencies of cartridges, *ie.* `"rockmongo-1.1": ["mongodb-2.2"]` means that RockMongo cannot be installed without MongoDB installed first. The second part of this configuration file, the template hash, stores the embedded cartridges that are installed along with the template, *ie.* `"cakephp": ["mysql-5.1"]` means that CakePHP installs MySQL as one of it's embedded cartridges.
+The configuration file has two parts, the **cartridge hash**, which stores the dependencies of cartridges, *ie.* `"rockmongo-1.1": ["mongodb-2.2"]` means that RockMongo cannot be installed without MongoDB installed first. The second part of this configuration file, the **template hash**, stores the embedded cartridges that are installed along with the template, *ie.* `"cakephp": ["mysql-5.1"]` means that CakePHP installs MySQL as one of it's embedded cartridges.
 
 
 ## Useful Links
@@ -87,8 +89,10 @@ The configuration file has two parts, the cartridge hash, which stores the depen
 * [Openshift User Guide](https://openshift.redhat.com/community/sites/default/files/documents/OpenShift-2.0-User_Guide-en-US.pdf)
 * [Openshift REST API Guide](https://openshift.redhat.com/community/sites/default/files/documents/OpenShift-2.0-REST_API_Guide-en-US_0.pdf)
 
-### Technology reference
-#### Backend
+### Application Architecture
+A basic description of the application architecture can be found in this [poster](https://github.com/subszero/openshift-workflows/raw/poster/poster_output.pdf).
+
+#### Technologies used in the backend
 * [NodeJS](http://www.nodejs.org/)
 * [ExpressJS](http://expressjs.com/) ( + [Embedded JavaScript](http://embeddedjs.com/) )
 * [RequestJS](https://github.com/mikeal/request)
@@ -96,7 +100,7 @@ The configuration file has two parts, the cartridge hash, which stores the depen
 
 
 
-#### Frontend
+#### Technologies used in the frontend
 * [HTML5 Rocks](http://www.html5rocks.com/en/)
 * [jQuery](http://jquery.com/) ( + [jQuery-UI](http://jqueryui.com/) )
 * [Bootstrap](http://twitter.github.com/bootstrap/)

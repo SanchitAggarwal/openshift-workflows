@@ -110,6 +110,7 @@ var App = function ($scope, $http) {
             return false;
         }
         Busy.start();
+        setError('Rolling back applications created');
         for (var i = 0; i<$scope.graph.vertices.length; i++) {
             proxify({ // Check if application is defined
                 uri: $scope.host + '/broker/rest/domains/' + $scope.namespace + '/applications/' + $scope.appName + i,
@@ -119,14 +120,14 @@ var App = function ($scope, $http) {
                 },
                 method: 'DELETE'
             }, function (data, status, headers, config) {
-                console.log(data.data);
+                $scope.graph.vertices[i].deployed = false;
             }, function (data, status, headers, config) {
                 console.log(data.data);
             });
             $scope.deleteRequestCount++;
         }
         Busy.stop();
-        $scope.startDeploy = false;
+        $scope.deployingApp = false;
     };
 
     /// Functions dealing with the connection parameters
@@ -166,7 +167,10 @@ var App = function ($scope, $http) {
                         break;
                     }
                 }
-                if (!flag) {
+                if (flag) {
+                    Busy.stop();
+                    return;
+                } else {
                     proxify({ // Get list of cartridges
                         uri: $scope.host + '/broker/rest/cartridges',
                         headers: {
@@ -428,11 +432,11 @@ var App = function ($scope, $http) {
     }, 100);
 
     // Variables and functions relating to deployment
-    $scope.startDeploy = false;
+    $scope.deployingApp = false;
     $scope.deploy = function () { // Deploy the graph to a openshift broker
         $scope.deleteRequestCount = 0;
         Busy.start();
-        $scope.startDeploy = true;
+        $scope.deployingApp = true;
         for (var i in $scope.graph.vertices) {
             $scope.graph.vertices[i].deployed = false;
         }
@@ -470,9 +474,6 @@ var App = function ($scope, $http) {
                 form: formData
             }, function (data, status, headers, config) {
                 $('.deploy_'+ i.toString() + '_0').css('color', '#0d0');
-                if (ele.cartridges.length === 1) {
-                    Busy.stop();
-                }
                 data = JSON.parse(data.error);
                 ele.properties.app.git = data.data.git_url;
                 ele.properties.app.app = data.data.app_url;
@@ -494,9 +495,6 @@ var App = function ($scope, $http) {
                         }
                     }, function (data, status, headers, config) {
                         $('.deploy_'+ i.toString() + '_' + j.toString()).css('color', '#0d0')
-                        if (j==ele.cartridges.length-1) {
-                            Busy.stop();
-                        }
                         data = JSON.parse(data.error);
                         var cartData = {};
                         cartData.name = data.data.name;
@@ -513,11 +511,19 @@ var App = function ($scope, $http) {
                 };
                 recursiveProxify(1);
                 ele.deployed = true;
-                if (i === $scope.graph.vertices.length) {
-                    Busy.stop();
-                    $scope.startDeploy = false;
-                }
             }, errorCallbackForDeploy);
+            // Check to see if all operations have been finished
+            var int = setInterval(function () {
+                var flag = true;
+                for (var i=0; i<$scope.graph.vertices.length; i++) {
+                    flag = flag && $scope.graph.vertices[i].deployed;
+                }
+                if (flag) {
+                    $scope.deployingApp = false;
+                    Busy.stop();
+                    clearInterval(int);
+                }
+            }, 1000);
         });
     };
 };
